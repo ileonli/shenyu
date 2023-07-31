@@ -28,8 +28,8 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.shenyu.common.exception.ShenyuException;
 import org.apache.shenyu.discovery.api.ShenyuDiscoveryService;
 import org.apache.shenyu.discovery.api.config.DiscoveryConfig;
-import org.apache.shenyu.discovery.api.listener.DiscoveryDataChangedEvent;
 import org.apache.shenyu.discovery.api.listener.DataChangedEventListener;
+import org.apache.shenyu.discovery.api.listener.DiscoveryDataChangedEvent;
 import org.apache.shenyu.spi.Join;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.data.Stat;
@@ -87,7 +87,7 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
                 nodeDataMap.forEach((k, v) -> {
                     if (!this.exits(k)) {
                         this.createOrUpdate(k, v, CreateMode.EPHEMERAL);
-                        LOGGER.info("zookeeper client register instance success: key={}|value={}", k, v);
+                        LOGGER.info("Zookeeper client register instance success: key={}|value={}", k, v);
                     }
                 });
             }
@@ -95,7 +95,7 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
         this.client.start();
         try {
             if (!this.client.blockUntilConnected(30, TimeUnit.SECONDS)) {
-                throw new ShenyuException("shenyu start ZookeeperDiscoveryService failure 30 seconds timeout");
+                throw new ShenyuException("Shenyu start ZookeeperDiscoveryService failure 30 seconds timeout");
             }
         } catch (InterruptedException e) {
             throw new ShenyuException(e);
@@ -103,7 +103,7 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
     }
 
     @Override
-    public Boolean exits(final String key) {
+    public boolean exits(final String key) {
         try {
             return null != client.checkExists().forPath(key);
         } catch (Exception e) {
@@ -121,38 +121,42 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
     }
 
     @Override
-    public void watcher(final String key, final DataChangedEventListener listener) {
+    public void watch(final String key, final DataChangedEventListener listener) {
         try {
             TreeCache treeCache = new TreeCache(client, key);
             TreeCacheListener treeCacheListener = (curatorFramework, event) -> {
-                ChildData data = event.getData();
-                DiscoveryDataChangedEvent dataChangedEvent;
-                if (Objects.nonNull(data) && Objects.nonNull(data.getData())) {
-                    String currentPath = data.getPath();
-                    String currentData = new String(data.getData(), StandardCharsets.UTF_8);
-                    LOGGER.info("shenyu find resultData ={}", currentData);
-                    Stat stat = data.getStat();
-                    boolean isEphemeral = Objects.nonNull(stat) && stat.getEphemeralOwner() > 0;
-                    if (!isEphemeral) {
-                        LOGGER.info("shenyu Ignore non-ephemeral node changes");
-                        return;
-                    }
-                    switch (event.getType()) {
-                        case NODE_ADDED:
-                            dataChangedEvent = new DiscoveryDataChangedEvent(currentPath, currentData, DiscoveryDataChangedEvent.Event.ADDED);
-                            break;
-                        case NODE_UPDATED:
-                            dataChangedEvent = new DiscoveryDataChangedEvent(currentPath, currentData, DiscoveryDataChangedEvent.Event.UPDATED);
-                            break;
-                        case NODE_REMOVED:
-                            dataChangedEvent = new DiscoveryDataChangedEvent(currentPath, currentData, DiscoveryDataChangedEvent.Event.DELETED);
-                            break;
-                        default:
-                            dataChangedEvent = new DiscoveryDataChangedEvent(currentPath, currentData, DiscoveryDataChangedEvent.Event.IGNORED);
-                            break;
-                    }
-                    listener.onChange(dataChangedEvent);
+                final ChildData data = event.getData();
+                if (Objects.isNull(data) || Objects.isNull(data.getData())) {
+                    return;
                 }
+
+                final String currentPath = data.getPath();
+                final String currentData = new String(data.getData(), StandardCharsets.UTF_8);
+                LOGGER.info("Shenyu find resultData = {}", currentData);
+
+                final Stat stat = data.getStat();
+                boolean isEphemeral = Objects.nonNull(stat) && stat.getEphemeralOwner() > 0;
+                if (!isEphemeral) {
+                    LOGGER.info("Shenyu Ignore non-ephemeral node changes");
+                    return;
+                }
+
+                DiscoveryDataChangedEvent.Event eventType;
+                switch (event.getType()) {
+                    case NODE_ADDED:
+                        eventType = DiscoveryDataChangedEvent.Event.ADDED;
+                        break;
+                    case NODE_UPDATED:
+                        eventType = DiscoveryDataChangedEvent.Event.UPDATED;
+                        break;
+                    case NODE_REMOVED:
+                        eventType = DiscoveryDataChangedEvent.Event.DELETED;
+                        break;
+                    default:
+                        eventType = DiscoveryDataChangedEvent.Event.IGNORED;
+                        break;
+                }
+                listener.onChange(new DiscoveryDataChangedEvent(currentPath, currentData, eventType));
             };
             treeCache.getListenable().addListener(treeCacheListener);
             treeCache.start();
@@ -163,9 +167,10 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
     }
 
     @Override
-    public void unWatcher(final String key) {
-        if (cacheMap.containsKey(key)) {
-            cacheMap.remove(key).close();
+    public void unWatch(final String key) {
+        TreeCache removed = cacheMap.remove(key);
+        if (Objects.nonNull(removed)) {
+            removed.close();
         }
     }
 
@@ -178,29 +183,28 @@ public class ZookeeperDiscoveryService implements ShenyuDiscoveryService {
     public List<String> getRegisterData(final String key) {
         try {
             List<String> children = client.getChildren().forPath(key);
-            List<String> datas = new ArrayList<>();
+            List<String> registerData = new ArrayList<>(children.size());
             for (String child : children) {
                 String nodePath = key + "/" + child;
                 byte[] data = client.getData().forPath(nodePath);
-                datas.add(new String(data, StandardCharsets.UTF_8));
+                registerData.add(new String(data, StandardCharsets.UTF_8));
             }
-            return datas;
+            return registerData;
         } catch (Exception e) {
             throw new ShenyuException(e);
         }
     }
 
     @Override
-    public void shutdown() {
+    public void close() {
         try {
-            //close treeCache
-            for (String key : cacheMap.keySet()) {
-                cacheMap.get(key).close();
+            // close treeCache
+            for (TreeCache value : cacheMap.values()) {
+                value.close();
             }
             client.close();
         } catch (Exception e) {
             throw new ShenyuException(e);
         }
-
     }
 }

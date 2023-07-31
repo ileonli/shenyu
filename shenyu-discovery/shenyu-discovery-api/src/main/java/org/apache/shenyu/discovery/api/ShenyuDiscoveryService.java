@@ -21,13 +21,14 @@ import org.apache.shenyu.discovery.api.config.DiscoveryConfig;
 import org.apache.shenyu.discovery.api.listener.DataChangedEventListener;
 import org.apache.shenyu.spi.SPI;
 
+import java.io.Closeable;
 import java.util.List;
 
 /**
  * The interface for shenyu discovery service.
  */
 @SPI
-public interface ShenyuDiscoveryService {
+public interface ShenyuDiscoveryService extends Closeable {
 
     /**
      * Init shenyu discovery service .
@@ -37,19 +38,19 @@ public interface ShenyuDiscoveryService {
     void init(DiscoveryConfig config);
 
     /**
-     * Watcher path , fire data changed event.
+     * Watch the key, fire data changed event.
      *
      * @param key      the key
      * @param listener the listener
      */
-    void watcher(String key, DataChangedEventListener listener);
+    void watch(String key, DataChangedEventListener listener);
 
     /**
-     * unWatcher path.
+     * UnWatcher the key.
      *
      * @param key key
      */
-    void unWatcher(String key);
+    void unWatch(String key);
 
     /**
      * Register data.
@@ -60,7 +61,7 @@ public interface ShenyuDiscoveryService {
     void register(String key, String value);
 
     /**
-     * getData by key.
+     * Get the register data by key.
      *
      * @param key key
      * @return value
@@ -68,16 +69,16 @@ public interface ShenyuDiscoveryService {
     List<String> getRegisterData(String key);
 
     /**
-     * exits.
+     * Check whether the given key exists.
      *
      * @param key key
-     * @return Boolean
+     * @return boolean
      */
-    Boolean exits(String key);
+    boolean exits(String key);
 
     /**
-     * shutdown.
+     * Close the service.
      */
-    void shutdown();
-
+    @Override
+    void close();
 }

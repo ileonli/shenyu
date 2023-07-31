@@ -33,8 +33,8 @@ import org.apache.shenyu.admin.model.entity.DiscoveryHandlerDO;
 import org.apache.shenyu.admin.model.entity.DiscoveryUpstreamDO;
 import org.apache.shenyu.admin.model.entity.ProxySelectorDO;
 import org.apache.shenyu.admin.transfer.DiscoveryTransfer;
-import org.apache.shenyu.common.dto.DiscoveryUpstreamData;
 import org.apache.shenyu.common.dto.DiscoverySyncData;
+import org.apache.shenyu.common.dto.DiscoveryUpstreamData;
 import org.apache.shenyu.common.enums.ConfigGroupEnum;
 import org.apache.shenyu.common.enums.DataEventTypeEnum;
 import org.apache.shenyu.common.utils.GsonUtils;
@@ -129,7 +129,7 @@ public class DefaultDiscoveryProcessor implements DiscoveryProcessor, Applicatio
         if (Objects.nonNull(cacheKey) && cacheKey.contains(key)) {
             throw new ShenyuAdminException(String.format("shenyu discovery has watcher key = %s", key));
         }
-        shenyuDiscoveryService.watcher(key, getDiscoveryDataChangedEventListener(discoveryHandlerDTO, proxySelectorDTO));
+        shenyuDiscoveryService.watch(key, getDiscoveryDataChangedEventListener(discoveryHandlerDTO, proxySelectorDTO));
         cacheKey.add(key);
         DataChangedEvent dataChangedEvent = new DataChangedEvent(ConfigGroupEnum.PROXY_SELECTOR, DataEventTypeEnum.CREATE,
                 Collections.singletonList(DiscoveryTransfer.INSTANCE.mapToData(proxySelectorDTO)));
@@ -143,9 +143,9 @@ public class DefaultDiscoveryProcessor implements DiscoveryProcessor, Applicatio
      */
     @Override
     public void removeDiscovery(final DiscoveryDO discoveryDO) {
-        ShenyuDiscoveryService shenyuDiscoveryService = discoveryServiceCache.get(discoveryDO.getId());
-        shenyuDiscoveryService.shutdown();
-        LOG.info("shenyu discovery shutdown [{}] discovery", discoveryDO.getName());
+        try (ShenyuDiscoveryService shenyuDiscoveryService = discoveryServiceCache.get(discoveryDO.getId())) {
+            LOG.info("shenyu discovery shutdown [{}] discovery", discoveryDO.getName());
+        }
     }
 
     /**
@@ -159,7 +159,7 @@ public class DefaultDiscoveryProcessor implements DiscoveryProcessor, Applicatio
         String key = buildProxySelectorKey(discoveryHandlerDTO.getListenerNode());
         Set<String> cacheKey = dataChangedEventListenerCache.get(discoveryHandlerDTO.getDiscoveryId());
         cacheKey.remove(key);
-        shenyuDiscoveryService.unWatcher(key);
+        shenyuDiscoveryService.unWatch(key);
         DataChangedEvent dataChangedEvent = new DataChangedEvent(ConfigGroupEnum.PROXY_SELECTOR, DataEventTypeEnum.DELETE,
                 Collections.singletonList(DiscoveryTransfer.INSTANCE.mapToData(proxySelectorDTO)));
         eventPublisher.publishEvent(dataChangedEvent);
